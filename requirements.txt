@@ -1,0 +1,14 @@
+Flask
+Flask-SocketIO
+Flask-SQLAlchemy
+Flask-Login
+Flask-WTF
+Werkzeug
+python-socketio
+python-engineio
+python-dotenv
+WTForms
+email-validator
+requests
+gunicorn
+eventlet

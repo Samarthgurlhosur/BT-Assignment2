@@ -1,0 +1,464 @@
+{% extends "base.html" %}
+
+{% block title %}Buyer Dashboard - Land Registration System{% endblock %}
+
+{% block content %}
+<div class="dashboard buyer-dashboard">
+    <div class="dashboard-header">
+        <h1>Buyer Dashboard</h1>
+        <p>Welcome, {{ user.full_name }}!</p>
+    </div>
+
+    <div class="dashboard-tabs">
+        <button class="tab-button active" onclick="switchTab('browse')">Browse Lands</button>
+        <button class="tab-button" onclick="switchTab('recommendations')">AI Recommendations</button>
+        <button class="tab-button" onclick="switchTab('my-offers')">My Offers</button>
+        <button class="tab-button" onclick="switchTab('messages')">Messages</button>
+        <button class="tab-button" onclick="switchTab('transactions')">My Purchases</button>
+    </div>
+
+    <!-- Browse Lands Tab -->
+    <div id="browse" class="tab-content active">
+        <h2>Available Lands</h2>
+        <div class="search-filters">
+            <input type="text" id="location-filter" placeholder="Search location">
+            <input type="number" id="min-price" placeholder="Min Price">
+            <input type="number" id="max-price" placeholder="Max Price">
+            <input type="number" id="min-size" placeholder="Min Size">
+            <input type="number" id="max-size" placeholder="Max Size">
+            <label><input type="checkbox" id="verified-only"> Verified Properties Only</label>
+            <button onclick="searchLands()" class="btn btn-primary">Search</button>
+        </div>
+        <div id="lands-list" class="lands-grid">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+
+    <!-- Recommendations Tab -->
+    <div id="recommendations" class="tab-content">
+        <h2>AI Recommendations for You</h2>
+        <div id="recommendations-list" class="recommendations-grid">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+
+    <!-- My Offers Tab -->
+    <div id="my-offers" class="tab-content">
+        <h2>My Offers</h2>
+        <div id="my-offers-list" class="offers-grid">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+
+    <!-- Messages Tab -->
+    <div id="messages" class="tab-content">
+        <h2>Negotiation Messages</h2>
+        <div id="messages-list" class="messages-container">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+
+    <!-- Transactions Tab -->
+    <div id="transactions" class="tab-content">
+        <h2>My Purchases</h2>
+        <div id="transactions-list" class="transactions-table">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+</div>
+
+<!-- Land Details Modal -->
+<div id="landModal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <span class="close" onclick="closeLandModal()">&times;</span>
+        <div id="modal-body">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+</div>
+
+<script>
+function switchTab(tabName) {
+    const tabs = document.querySelectorAll('.tab-content');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    const buttons = document.querySelectorAll('.tab-button');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    
+    document.getElementById(tabName).classList.add('active');
+    event.target.classList.add('active');
+    
+    if (tabName === 'browse') loadLands();
+    if (tabName === 'recommendations') loadRecommendations();
+    if (tabName === 'my-offers') loadMyOffers();
+    if (tabName === 'messages') loadMessages();
+    if (tabName === 'transactions') loadPurchases();
+}
+
+async function loadLands() {
+    try {
+        const response = await fetch('/api/lands');
+        const lands = await response.json();
+        
+        const landsList = document.getElementById('lands-list');
+        landsList.innerHTML = lands.map(land => `
+            <div class="land-card">
+                ${land.images && land.images.length > 0 ? `<img src="/static/placeholder.png" alt="${land.title}" class="land-image">` : ''}
+                <h3>${land.title}</h3>
+                <p><strong>Location:</strong> ${land.location}</p>
+                <p><strong>Size:</strong> ${land.size_sqft} sq ft</p>
+                <p><strong>Price:</strong> $${land.price}</p>
+                <p><strong>Verification:</strong> ${land.verification_status}</p>
+                <div class="land-actions">
+                    <button onclick="viewLandDetails('${land.id}')" class="btn btn-small">View Details</button>
+                    <button onclick="makeOffer('${land.id}', ${land.price})" class="btn btn-small btn-success">Make Offer</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading lands:', error);
+    }
+}
+
+async function loadRecommendations() {
+    try {
+        const response = await fetch('/api/recommendations');
+        const recommendations = await response.json();
+        
+        const recList = document.getElementById('recommendations-list');
+        recList.innerHTML = recommendations.map(rec => `
+            <div class="recommendation-card">
+                <h3>${rec.title}</h3>
+                <p><strong>Score:</strong> ${(rec.score * 100).toFixed(1)}%</p>
+                <p><strong>Price:</strong> $${rec.price}</p>
+                <p><strong>Size:</strong> ${rec.size_sqft} sq ft</p>
+                <p><strong>Location:</strong> ${rec.location}</p>
+                <p><em>${rec.reason}</em></p>
+                <button onclick="makeOffer('${rec.land_id}', ${rec.price})" class="btn btn-primary">Make Offer</button>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading recommendations:', error);
+    }
+}
+
+async function loadMyOffers() {
+    try {
+        const response = await fetch('/api/offers');
+        const offers = await response.json();
+        
+        const offersList = document.getElementById('my-offers-list');
+        const myOffers = offers.filter(o => o.status); // Filter user's offers
+        
+        offersList.innerHTML = myOffers.map(offer => `
+            <div class="offer-card">
+                <h3>Offer #${offer.id.substring(0, 8)}</h3>
+                <p><strong>Offered Price:</strong> $${offer.offered_price}</p>
+                <p><strong>Status:</strong> <span class="status ${offer.status}">${offer.status}</span></p>
+                <p><strong>Message:</strong> ${offer.message || 'N/A'}</p>
+                <button onclick="startNegotiation('${offer.land_id}')" class="btn btn-small">Chat</button>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading offers:', error);
+    }
+}
+
+async function loadMessages() {
+    // This would load messages from the database
+    const messagesList = document.getElementById('messages-list');
+    messagesList.innerHTML = '<p>Messages appear here during negotiations.</p>';
+}
+
+async function loadPurchases() {
+    try {
+        const response = await fetch('/api/my-transactions');
+        const transactions = await response.json();
+        
+        const txList = document.getElementById('transactions-list');
+        txList.innerHTML = `
+            <table class="transactions-table">
+                <thead>
+                    <tr>
+                        <th>Land ID</th>
+                        <th>Price Paid</th>
+                        <th>Block Index</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${transactions.map(tx => `
+                        <tr>
+                            <td>${tx.land_id.substring(0, 8)}</td>
+                            <td>$${tx.final_amount}</td>
+                            <td>${tx.blockchain_index}</td>
+                            <td>${new Date(tx.created_at).toLocaleDateString()}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (error) {
+        console.error('Error loading purchases:', error);
+    }
+}
+
+async function viewLandDetails(landId) {
+    try {
+        const response = await fetch(`/api/lands/${landId}`);
+        const land = await response.json();
+        
+        document.getElementById('modal-body').innerHTML = `
+            <h2>${land.title}</h2>
+            <p><strong>Location:</strong> ${land.location}</p>
+            <p><strong>Size:</strong> ${land.size_sqft} sq ft</p>
+            <p><strong>Price:</strong> $${land.price}</p>
+            <p><strong>Description:</strong> ${land.description}</p>
+            <p><strong>Owner:</strong> ${land.owner ? land.owner.full_name : 'N/A'}</p>
+            <p><strong>Verification:</strong> ${land.verification_status}</p>
+            
+            <h3>Documents</h3>
+            ${land.documents && land.documents.length > 0 ? `
+                <ul>
+                    ${land.documents.map(doc => `<li>${doc.document_type}</li>`).join('')}
+                </ul>
+            ` : '<p>No documents</p>'}
+            
+            <button onclick="makeOffer('${land.id}', ${land.price})" class="btn btn-success">Make Offer</button>
+        `;
+        
+        document.getElementById('landModal').style.display = 'block';
+    } catch (error) {
+        console.error('Error loading land details:', error);
+    }
+}
+
+function closeLandModal() {
+    document.getElementById('landModal').style.display = 'none';
+}
+
+async function makeOffer(landId, currentPrice) {
+    const offeredPrice = prompt(`Enter your offer (Current price: $${currentPrice}):`);
+    if (offeredPrice) {
+        try {
+            const response = await fetch('/api/offers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    land_id: landId,
+                    offered_price: parseFloat(offeredPrice),
+                    message: 'Interested in this property'
+                })
+            });
+            
+            if (response.ok) {
+                alert('Offer submitted successfully!');
+                closeLandModal();
+                loadMyOffers();
+            }
+        } catch (error) {
+            console.error('Error making offer:', error);
+        }
+    }
+}
+
+function searchLands() {
+    // Implement search logic
+    const location = document.getElementById('location-filter').value;
+    const minPrice = document.getElementById('min-price').value;
+    const maxPrice = document.getElementById('max-price').value;
+    const minSize = document.getElementById('min-size').value;
+    const maxSize = document.getElementById('max-size').value;
+    const verifiedOnly = document.getElementById('verified-only').checked;
+    
+    let url = '/api/lands/search?';
+    if (location) url += `location=${location}&`;
+    if (minPrice) url += `min_price=${minPrice}&`;
+    if (maxPrice) url += `max_price=${maxPrice}&`;
+    if (minSize) url += `min_size=${minSize}&`;
+    if (maxSize) url += `max_size=${maxSize}&`;
+    if (verifiedOnly) url += 'verified=true&';
+    
+    fetch(url).then(r => r.json()).then(lands => {
+        const landsList = document.getElementById('lands-list');
+        landsList.innerHTML = lands.map(land => `
+            <div class="land-card">
+                <h3>${land.title}</h3>
+                <p><strong>Location:</strong> ${land.location}</p>
+                <p><strong>Size:</strong> ${land.size_sqft} sq ft</p>
+                <p><strong>Price:</strong> $${land.price}</p>
+                <div class="land-actions">
+                    <button onclick="viewLandDetails('${land.id}')" class="btn btn-small">View Details</button>
+                    <button onclick="makeOffer('${land.id}', ${land.price})" class="btn btn-small btn-success">Make Offer</button>
+                </div>
+            </div>
+        `).join('');
+    });
+}
+
+// Load initial data
+loadLands();
+</script>
+
+<style>
+    .dashboard {
+        padding: 2rem;
+    }
+
+    .dashboard-header {
+        margin-bottom: 2rem;
+    }
+
+    .dashboard-tabs {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .tab-button {
+        padding: 0.75rem 1.5rem;
+        background: #f0f0f0;
+        border: 2px solid transparent;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .tab-button.active {
+        background: #007bff;
+        color: white;
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .search-filters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+        padding: 1rem;
+        background: #f0f0f0;
+        border-radius: 8px;
+    }
+
+    .search-filters input,
+    .search-filters label {
+        padding: 0.5rem;
+    }
+
+    .lands-grid, .offers-grid, .recommendations-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 2rem;
+    }
+
+    .land-card, .offer-card, .recommendation-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .land-image {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+    }
+
+    .status {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+
+    .status.pending {
+        background: #fff3cd;
+        color: #856404;
+    }
+
+    .status.accepted {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .status.rejected {
+        background: #f8d7da;
+        color: #721c24;
+    }
+
+    .land-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+
+    .modal {
+        position: fixed;
+        z-index: 1;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.4);
+    }
+
+    .modal-content {
+        background-color: #fefefe;
+        margin: 5% auto;
+        padding: 2rem;
+        border: 1px solid #888;
+        border-radius: 8px;
+        width: 80%;
+        max-width: 600px;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+
+    .close {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .close:hover {
+        color: black;
+    }
+
+    .messages-container {
+        background: #f0f0f0;
+        padding: 1rem;
+        border-radius: 8px;
+        height: 400px;
+        overflow-y: auto;
+    }
+
+    .transactions-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .transactions-table th {
+        background: #f0f0f0;
+        padding: 0.75rem;
+        text-align: left;
+    }
+
+    .transactions-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid #ddd;
+    }
+</style>
+{% endblock %}

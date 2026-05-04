@@ -1,0 +1,476 @@
+{% extends "base.html" %}
+
+{% block title %}Owner Dashboard - Land Registration System{% endblock %}
+
+{% block content %}
+<div class="dashboard owner-dashboard">
+    <div class="dashboard-header">
+        <h1>Owner Dashboard</h1>
+        <p>Welcome, {{ user.full_name }}!</p>
+    </div>
+
+    <div class="dashboard-tabs">
+        <button class="tab-button active" onclick="switchTab('my-lands')">My Lands</button>
+        <button class="tab-button" onclick="switchTab('new-land')">Add New Land</button>
+        <button class="tab-button" onclick="switchTab('offers')">Offers Received</button>
+        <button class="tab-button" onclick="switchTab('transactions')">Transactions</button>
+        <button class="tab-button" onclick="switchTab('blockchain')">Blockchain</button>
+    </div>
+
+    <!-- My Lands Tab -->
+    <div id="my-lands" class="tab-content active">
+        <h2>My Land Listings</h2>
+        <div id="lands-list" class="lands-grid">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+
+    <!-- Add New Land Tab -->
+    <div id="new-land" class="tab-content">
+        <h2>Add New Land</h2>
+        <form id="add-land-form" class="form-grid">
+            <div class="form-group">
+                <label for="title">Title:</label>
+                <input type="text" id="title" name="title" required>
+            </div>
+
+            <div class="form-group">
+                <label for="location">Location:</label>
+                <input type="text" id="location" name="location" required>
+            </div>
+
+            <div class="form-group">
+                <label for="size_sqft">Size (sq ft):</label>
+                <input type="number" id="size_sqft" name="size_sqft" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label for="price">Price:</label>
+                <input type="number" id="price" name="price" step="0.01" required>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="description">Description:</label>
+                <textarea id="description" name="description" rows="4"></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Add Land</button>
+        </form>
+    </div>
+
+    <!-- Offers Tab -->
+    <div id="offers" class="tab-content">
+        <h2>Offers Received</h2>
+        <div id="offers-list" class="offers-grid">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+
+    <!-- Transactions Tab -->
+    <div id="transactions" class="tab-content">
+        <h2>Transaction History</h2>
+        <div id="transactions-list" class="transactions-table">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+
+    <!-- Blockchain Tab -->
+    <div id="blockchain" class="tab-content">
+        <h2>Blockchain Information</h2>
+        <div id="blockchain-stats" class="blockchain-stats">
+            <!-- Loaded dynamically -->
+        </div>
+        <div id="blockchain-ledger" class="blockchain-ledger">
+            <!-- Loaded dynamically -->
+        </div>
+    </div>
+</div>
+
+<script>
+function switchTab(tabName) {
+    // Hide all tabs
+    const tabs = document.querySelectorAll('.tab-content');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    // Deactivate all buttons
+    const buttons = document.querySelectorAll('.tab-button');
+    buttons.forEach(btn => btn.classList.remove('active'));
+    
+    // Show selected tab
+    document.getElementById(tabName).classList.add('active');
+    event.target.classList.add('active');
+    
+    // Load data when tab is activated
+    if (tabName === 'my-lands') loadMyLands();
+    if (tabName === 'offers') loadOffers();
+    if (tabName === 'transactions') loadTransactions();
+    if (tabName === 'blockchain') loadBlockchain();
+}
+
+async function loadMyLands() {
+    try {
+        const response = await fetch('/api/lands?my_lands=true');
+        const lands = await response.json();
+        
+        const landsList = document.getElementById('lands-list');
+        landsList.innerHTML = lands.map(land => `
+            <div class="land-card">
+                <h3>${land.title}</h3>
+                <p><strong>Location:</strong> ${land.location}</p>
+                <p><strong>Size:</strong> ${land.size_sqft} sq ft</p>
+                <p><strong>Price:</strong> $${land.price}</p>
+                <p><strong>Status:</strong> <span class="status ${land.is_available ? 'available' : 'sold'}">${land.is_available ? 'Available' : 'Sold'}</span></p>
+                <p><strong>Verification:</strong> ${land.verification_status}</p>
+                <div class="land-actions">
+                    <button onclick="viewLandDetails('${land.id}')" class="btn btn-small">Details</button>
+                    <button onclick="uploadDocuments('${land.id}')" class="btn btn-small">Upload Docs</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading lands:', error);
+    }
+}
+
+async function loadOffers() {
+    try {
+        const response = await fetch('/api/offers');
+        const offers = await response.json();
+        
+        const offersList = document.getElementById('offers-list');
+        offersList.innerHTML = offers.map(offer => `
+            <div class="offer-card">
+                <h3>Offer #${offer.id.substring(0, 8)}</h3>
+                <p><strong>Offered Price:</strong> $${offer.offered_price}</p>
+                <p><strong>Status:</strong> <span class="status ${offer.status}">${offer.status}</span></p>
+                <p><strong>Message:</strong> ${offer.message || 'N/A'}</p>
+                <div class="offer-actions">
+                    ${offer.status === 'pending' ? `
+                        <button onclick="respondToOffer('${offer.id}', 'accepted')" class="btn btn-success">Accept</button>
+                        <button onclick="respondToOffer('${offer.id}', 'rejected')" class="btn btn-danger">Reject</button>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading offers:', error);
+    }
+}
+
+async function loadTransactions() {
+    try {
+        const response = await fetch('/api/my-transactions');
+        const transactions = await response.json();
+        
+        const txList = document.getElementById('transactions-list');
+        txList.innerHTML = `
+            <table class="transactions-table">
+                <thead>
+                    <tr>
+                        <th>Land ID</th>
+                        <th>Amount</th>
+                        <th>Block Index</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${transactions.map(tx => `
+                        <tr>
+                            <td>${tx.land_id.substring(0, 8)}</td>
+                            <td>$${tx.final_amount}</td>
+                            <td>${tx.blockchain_index || 'N/A'}</td>
+                            <td>${tx.status}</td>
+                            <td>${new Date(tx.created_at).toLocaleDateString()}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (error) {
+        console.error('Error loading transactions:', error);
+    }
+}
+
+async function loadBlockchain() {
+    try {
+        const response = await fetch('/api/blockchain/statistics');
+        const stats = await response.json();
+        
+        const statsDiv = document.getElementById('blockchain-stats');
+        statsDiv.innerHTML = `
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h4>Total Blocks</h4>
+                    <p class="stat-value">${stats.total_blocks}</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Total Transactions</h4>
+                    <p class="stat-value">${stats.total_transactions}</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Total Amount</h4>
+                    <p class="stat-value">$${stats.total_amount_transacted}</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Chain Valid</h4>
+                    <p class="stat-value">${stats.chain_valid ? '✓' : '✗'}</p>
+                </div>
+                <div class="stat-card">
+                    <h4>Pending Transactions</h4>
+                    <p class="stat-value">${stats.pending_transactions}</p>
+                </div>
+            </div>
+        `;
+        
+        const ledgerDiv = document.getElementById('blockchain-ledger');
+        const blockchainResponse = await fetch('/api/blockchain');
+        const blockchain = await blockchainResponse.json();
+        
+        ledgerDiv.innerHTML = `
+            <h3>Blockchain Ledger (Last 5 Blocks)</h3>
+            ${blockchain.slice(-5).reverse().map(block => `
+                <div class="blockchain-block">
+                    <p><strong>Block #${block.index}</strong></p>
+                    <p><small>Hash: ${block.hash.substring(0, 32)}...</small></p>
+                    <p><small>Previous: ${block.previous_hash.substring(0, 32)}...</small></p>
+                </div>
+            `).join('')}
+        `;
+    } catch (error) {
+        console.error('Error loading blockchain:', error);
+    }
+}
+
+document.getElementById('add-land-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData);
+    
+    try {
+        const response = await fetch('/api/lands', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+            alert('Land added successfully!');
+            e.target.reset();
+            loadMyLands();
+        } else {
+            alert('Error adding land');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+    }
+});
+
+async function respondToOffer(offerId, status) {
+    try {
+        const response = await fetch(`/api/offers/${offerId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        
+        if (response.ok) {
+            loadOffers();
+        }
+    } catch (error) {
+        console.error('Error responding to offer:', error);
+    }
+}
+
+// Load initial data
+loadMyLands();
+</script>
+
+<style>
+    .dashboard {
+        padding: 2rem;
+    }
+
+    .dashboard-header {
+        margin-bottom: 2rem;
+    }
+
+    .dashboard-tabs {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .tab-button {
+        padding: 0.75rem 1.5rem;
+        background: #f0f0f0;
+        border: 2px solid transparent;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .tab-button.active {
+        background: #007bff;
+        color: white;
+    }
+
+    .tab-button:hover {
+        background: #e0e0e0;
+    }
+
+    .tab-button.active:hover {
+        background: #0056b3;
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .lands-grid, .offers-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 2rem;
+    }
+
+    .land-card, .offer-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .land-card h3, .offer-card h3 {
+        margin: 0 0 1rem 0;
+    }
+
+    .land-card p, .offer-card p {
+        margin: 0.5rem 0;
+    }
+
+    .status {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+
+    .status.available {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .status.sold {
+        background: #f8d7da;
+        color: #721c24;
+    }
+
+    .status.pending {
+        background: #fff3cd;
+        color: #856404;
+    }
+
+    .status.accepted {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .status.rejected {
+        background: #f8d7da;
+        color: #721c24;
+    }
+
+    .land-actions, .offer-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .form-grid .full-width {
+        grid-column: 1 / -1;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .form-group label {
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+    }
+
+    .form-group input,
+    .form-group textarea {
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-family: inherit;
+    }
+
+    .transactions-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .transactions-table thead {
+        background: #f0f0f0;
+    }
+
+    .transactions-table th {
+        padding: 0.75rem;
+        text-align: left;
+        font-weight: 600;
+    }
+
+    .transactions-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid #ddd;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: #f0f0f0;
+        padding: 1rem;
+        border-radius: 8px;
+        text-align: center;
+    }
+
+    .stat-card h4 {
+        margin: 0 0 0.5rem 0;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #007bff;
+    }
+
+    .blockchain-block {
+        background: #f0f0f0;
+        padding: 1rem;
+        border-radius: 4px;
+        margin: 0.5rem 0;
+        border-left: 4px solid #007bff;
+    }
+</style>
+{% endblock %}
